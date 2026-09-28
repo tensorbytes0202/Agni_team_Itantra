@@ -1,0 +1,68 @@
+[
+  {
+    "id": 1,
+    "input_text": "Urgently send the medical team to the north checkpoint.",
+    "expected_semantic": {
+      "ACTION": "SEND",
+      "TEAM": "MEDICAL",
+      "LOCATION": "NORTH_CHECKPOINT",
+      "URGENCY": "HIGH"
+    },
+    "language": "en"
+  },
+  {
+    "id": 2,
+    "input_text": "Evacuate civilian group from sector 4 immediately.",
+    "expected_semantic": {
+      "ACTION": "EVACUATE",
+      "ACTOR": "CIVILIAN",
+      "LOCATION": "SECTOR_4",
+      "URGENCY": "HIGH"
+    },
+    "language": "en"
+  },
+  {
+    "id": 3,
+    "input_text": "Medical team is at the north checkpoint.",
+    "expected_semantic": {
+      "TEAM": "MEDICAL",
+      "LOCATION": "NORTH_CHECKPOINT",
+      "STATUS": "DEPLOYED"
+    },
+    "language": "en"
+  },
+  {
+    "id": 4,
+    "input_text": "Send 5 ambulances to south bridge urgently.",
+    "expected_semantic": {
+      "ACTION": "SEND",
+      "QUANTITY": "5",
+      "OBJECT": "AMBULANCE",
+      "LOCATION": "SOUTH_BRIDGE",
+      "URGENCY": "HIGH"
+    },
+    "language": "en"
+  },
+  {
+    "id": 5,
+    "input_text": "Sir, urgently dispatch engineer unit to power plant.",
+    "expected_semantic": {
+      "ACTION": "DISPATCH",
+      "TEAM": "ENGINEER",
+      "LOCATION": "POWER_PLANT",
+      "URGENCY": "HIGH"
+    },
+    "language": "en"
+  },
+  {
+    "id": 6,
+    "input_text": "Turant medical team ko north checkpoint bhejo.",
+    "expected_semantic": {
+      "ACTION": "SEND",
+      "TEAM": "MEDICAL",
+      "LOCATION": "NORTH_CHECKPOINT",
+      "URGENCY": "HIGH"
+    },
+    "language": "hinglish"
+  }
+]

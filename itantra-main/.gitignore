@@ -1,0 +1,18 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+get-pip.py
+
+# Models are large: keep them out of git (see README "Models")
+language_packs/
+itantra_ai/stt/models/*
+!itantra_ai/stt/models/README.md
+!itantra_ai/stt/models/indicconformer/
+itantra_ai/stt/models/indicconformer/*
+!itantra_ai/stt/models/indicconformer/README.md
+itantra_ai/tts/models/
+**/.cache/
+
+# Personal voice recordings / received audio
+*.wav

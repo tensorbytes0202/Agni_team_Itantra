@@ -1,0 +1,7 @@
+vosk>=0.3.45          # English + Hindi STT
+sherpa-onnx>=1.10     # IndicConformer STT (8 Indic languages) + Piper/MMS TTS
+numpy
+sounddevice           # microphone + speaker
+huggingface_hub       # one-time model download
+psutil                # RAM measurements
+streamlit>=1.30       # only for the old V1 demo (itantra_ai/app.py)
