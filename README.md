@@ -1,4 +1,4 @@
-# 🇮🇳 iTantra
+# iTantra
 
 ## Indian Multilingual TTS & STT Aided Neural Transceiver Radio Access for Low-Bitrate Links
 
