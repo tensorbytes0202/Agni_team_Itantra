@@ -221,7 +221,14 @@ class RadioManager:
             self._seen.append(key)
             latency = None
             if not tr.compact and pkt.timestamp_ms:
-                latency = (P.now_ms() - pkt.timestamp_ms) & 0xFFFFFFFF
+                # Sender/receiver clocks aren't synced (no NTP between the two laptops), so a
+                # skew bigger than the real transit time can make the raw unsigned difference
+                # wrap past 2**32. Re-interpret it as signed and floor at 0 (real latency can't
+                # be negative) instead of reporting a nonsense multi-day "latency".
+                diff = (P.now_ms() - pkt.timestamp_ms) & 0xFFFFFFFF
+                if diff > 0x7FFFFFFF:
+                    diff -= 0x100000000
+                latency = max(diff, 0)
             if pkt.type == P.SUMMARY:
                 urg, act, alert, corr, loc = parse_summary(pkt.payload)
                 self.on_receive(Received("SUMMARY", summary_to_text(urg, act), alert,
