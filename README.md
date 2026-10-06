@@ -1,6 +1,6 @@
 # iTantra
 
-## Indian Multilingual TTS & STT Aided Neural Transceiver Radio Access for Low-Bitrate Links
+## Indian Multilingual TTS & STT Aided Neural Transceiver Radio Access for Low-Bitrate Links.
 
 iTantra is an **offline-first multilingual communication system** designed to enable voice-based communication over **low-bandwidth and low-bitrate communication links**.
 
