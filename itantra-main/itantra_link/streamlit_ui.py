@@ -8,6 +8,7 @@ Run from the itantra-main folder, so .streamlit/config.toml (theme, localhost on
 """
 import collections
 import os
+import string
 import sys
 import time
 from types import SimpleNamespace
@@ -24,6 +25,14 @@ PORTS = {"sender": (5001, 6001), "receiver": (5002, 6002)}       # (wifi, low-bi
 LANGS = {"en": "English", "hi": "हिन्दी", "gu": "ગુજરાતી", "mr": "मराठी", "kn": "ಕನ್ನಡ",
          "ml": "മലയാളം", "ta": "தமிழ்", "te": "తెలుగు", "or": "ଓଡ଼ିଆ", "bn": "বাংলা"}
 LINK_NAMES = {"WIFI": "Wi-Fi", "BLUETOOTH": "Bluetooth", "LOWBITRATE": "Low-bitrate radio"}
+
+
+def plain(text) -> str:
+    """Untrusted text (peer names, nearby SSIDs) inside markdown labels, shown literally: every ASCII punctuation
+    character becomes an HTML entity, so markdown, links, images and :badge[...] directives never render."""
+    return "".join(f"&#{ord(c)};" if c in string.punctuation else c for c in str(text))
+
+
 REFRESH = 2                                                     # seconds between live updates
 
 
@@ -81,7 +90,7 @@ with st.sidebar:
                            help="Only needed if the network blocks broadcast discovery")
         if st.form_submit_button("Use this IP", icon=":material/link:", width="stretch") and ip.strip():
             n.disc.manual_ip = ip.strip()
-            st.toast(f"Looking for the {CH.OTHER[role]} at {ip.strip()}", icon=":material/search:")
+            st.toast(f"Looking for the {CH.OTHER[role]} at {plain(ip.strip())}", icon=":material/search:")
 
 if st.session_state.flash:
     st.toast(st.session_state.flash, icon=":material/wifi:")
@@ -98,7 +107,7 @@ def overview():
     with st.container(horizontal=True, vertical_alignment="center"):
         st.badge(role.capitalize(), icon=":material/person:", color="blue")
         if peer:
-            st.badge(f"Connected to {n.disc.peer.get('name', 'peer')}", icon=":material/check_circle:", color="green")
+            st.badge(f"Connected to {plain(n.disc.peer.get('name', 'peer'))}", icon=":material/check_circle:", color="green")
         else:
             st.badge(f"Searching for the {CH.OTHER[role]}", icon=":material/radar:", color="orange")
         if n.rm.current == "WIFI" and n.rm.weak_wifi():
@@ -147,13 +156,15 @@ def feed():
                 state = ":orange-badge[:material/schedule: Queued]" if (text, lang) in pending \
                     else ":green-badge[:material/done_all: Sent]"
                 with st.chat_message("you", avatar=":material/north_east:"):
-                    st.markdown(text)
-                    st.caption(f"{state}  ·  {LANGS.get(lang, lang)}  ·  {when}")
+                    st.text(text)
+                    st.caption(f"{state}  ·  {LANGS.get(lang, plain(lang))}  ·  {when}")
                 continue
             with st.chat_message("peer", avatar=":material/campaign:" if m.alert else ":material/south_west:"):
-                tag = ":red-badge[:material/warning: Alert]  " if m.alert else ""
-                st.markdown(f"{tag}{':gray-badge[Summary]  ' if m.kind == 'SUMMARY' else ''}{m.text}")
-                meta = [f"via {LINK_NAMES.get(m.channel, m.channel)}", LANGS.get(m.lang, m.lang), when]
+                tags = (":red-badge[:material/warning: Alert] " if m.alert else "") +                        (":gray-badge[Summary]" if m.kind == "SUMMARY" else "")
+                if tags:
+                    st.markdown(tags)
+                st.text(m.text)                           # peer text: never parsed as markdown
+                meta = [f"via {LINK_NAMES.get(m.channel, m.channel)}", LANGS.get(m.lang, plain(m.lang)), when]
                 if m.latency_ms is not None:
                     meta.insert(1, f"{m.latency_ms:.0f} ms")
                 if m.fec_corrections:
@@ -166,16 +177,17 @@ def feed():
 # ------------------------------------------------------------------ network dialog
 @st.dialog("Connect to network")
 def connect_dialog(net):
-    st.markdown(f"**{net['ssid']}**  ·  {net['signal']}%  ·  {net['band'] or 'band unknown'}  ·  {net['auth']}")
+    st.markdown(f"**{plain(net['ssid'])}**  ·  {net['signal']}%  ·  {net['band'] or 'band unknown'}  ·  "
+                f"{plain(net['auth'])}")
     with st.form("connect", border=False):
         pw = st.text_input("Password", type="password", help="Leave empty if this laptop has joined it before")
         if st.form_submit_button("Connect", type="primary", icon=":material/link:", width="stretch"):
-            with st.spinner(f"Connecting to {net['ssid']}…"):
+            with st.spinner(f"Connecting to {plain(net['ssid'])}…"):
                 ok, msg = W.connect(net["ssid"], pw or None, net["auth"])
             if ok:
-                st.session_state.flash = msg.capitalize()
+                st.session_state.flash = plain(msg.capitalize())
                 st.rerun()
-            st.error(msg, icon=":material/error:")
+            st.error(plain(msg), icon=":material/error:")
 
 
 # ------------------------------------------------------------------ layout
@@ -210,14 +222,14 @@ with left:
                 st.caption("Select a network to connect.")
             else:
                 net = nets[rows[0]]
-                label = f"Connect to {net['ssid']}"
+                label = f"Connect to {plain(net['ssid'])}"
                 if st.button(label, icon=":material/link:", type="primary", width="stretch"):
                     if net["secured"]:
                         connect_dialog(net)
                     else:
-                        with st.spinner(f"Connecting to {net['ssid']}…"):
+                        with st.spinner(f"Connecting to {plain(net['ssid'])}…"):
                             ok, msg = W.connect(net["ssid"], None, net["auth"])
-                        (st.success if ok else st.error)(msg)
+                        (st.success if ok else st.error)(plain(msg))
 
     with st.container(border=True):
         st.subheader(":material/monitor_heart: Link health")
@@ -231,9 +243,9 @@ with right:
                                 width=150, help="Language of the messages you send")
         feed()
         with st.form("send", clear_on_submit=True, border=False):
-            c_text, c_send = st.columns([4, 1.3], vertical_alignment="bottom")
-            text = c_text.text_input("Message", placeholder="emergency, madad bhejo", label_visibility="collapsed")
-            sent = c_send.form_submit_button("Send", icon=":material/send:", type="primary", width="stretch")
+            with st.container(horizontal=True, vertical_alignment="bottom"):
+                text = st.text_input("Message", placeholder="emergency, madad bhejo", label_visibility="collapsed")
+                sent = st.form_submit_button("Send", icon=":material/send:", type="primary")
         if sent and text.strip():
             n.rm.send_message(text.strip(), lang)
             n.feed.appendleft(("out", time.time(), (text.strip(), lang)))
