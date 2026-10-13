@@ -4,4 +4,4 @@ numpy
 sounddevice           # microphone + speaker
 huggingface_hub       # one-time model download
 psutil                # RAM measurements
-streamlit>=1.30       # only for the old V1 demo (itantra_ai/app.py)
+streamlit>=1.64       # connection UI (itantra_link/streamlit_ui.py) + V1 demo

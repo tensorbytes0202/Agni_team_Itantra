@@ -136,6 +136,10 @@ def _add_profile(ssid, pw, auth):
 
 
 def connect(ssid, password=None, auth="", wait=12):
+    # SSIDs come from nearby access points, i.e. anyone: block netsh wildcards ("*" = every
+    # saved profile), quotes and option-like names before they reach a command line.
+    if not ssid or ssid.strip() == "*" or ssid.startswith("-") or any(c in ssid for c in '"\r\n\0'):
+        return False, "refusing unsafe network name"
     if WIN:
         if password or ssid not in _profiles():
             secured = auth.strip().lower() not in ("", "open")

@@ -5,9 +5,10 @@ Tick each box. Write the number you see in the "Note" column so it can go straig
 ## 0. Setup (every new terminal)
 
 ```
-cd /d D:\itantra_10lang\SIH_iTantra
+cd itantra-main
 venv\Scripts\activate.bat
 chcp 65001
+rem optional, only if C: is short on space: keep model downloads and temp files on D:
 set HF_HOME=D:\hf_cache
 set TMP=D:\tmp
 set TEMP=D:\tmp

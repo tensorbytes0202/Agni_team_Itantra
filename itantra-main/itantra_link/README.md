@@ -1,7 +1,7 @@
 # itantra_link — Transmission layer (Radio Manager)
 
-Copy this `itantra_link` folder into `SIH_iTantra/` (next to `itantra_ai/`).
-No new pip packages needed (standard library only; reuses itantra_ai modules).
+Part of [iTantra](../../README.md). Run every command from the `itantra-main/` folder.
+Standard library only (reuses `itantra_ai` modules).
 
 ## What is real and what is emulated
 

@@ -1,0 +1,35 @@
+# The UI can switch WiFi networks and send messages: serve it to this laptop only,
+# not to everyone on the (open) WiFi. The radio link itself is UDP and is not affected.
+[server]
+address = "localhost"
+
+# This app drives the local WiFi adapter and LAN, so it cannot run on Streamlit Cloud:
+# hide the Deploy button and other developer options.
+[client]
+toolbarMode = "viewer"
+
+[theme]
+base = "dark"
+primaryColor = "#0D9488"
+backgroundColor = "#0B1220"
+secondaryBackgroundColor = "#111A2E"
+textColor = "#E2E8F0"
+borderColor = "#1E293B"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "10px"
+buttonRadius = "8px"
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+greenColor = "#22C55E"
+redColor = "#F43F5E"
+orangeColor = "#F59E0B"
+blueColor = "#38BDF8"
+violetColor = "#A78BFA"
+grayColor = "#64748B"
+dataframeBorderColor = "#1E293B"
+dataframeHeaderBackgroundColor = "#111A2E"
+
+[theme.sidebar]
+backgroundColor = "#0E1626"
+secondaryBackgroundColor = "#111A2E"
+borderColor = "#1E293B"

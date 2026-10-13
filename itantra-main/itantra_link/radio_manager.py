@@ -115,6 +115,11 @@ class RadioManager:
     def queued(self) -> int:
         return len(self._pending)
 
+    def pending(self) -> list:
+        """Copy of the unsent messages: (priority, time, text, lang)."""
+        with self._qlock:
+            return list(self._pending)
+
     def _save(self):
         if not self.queue_file:
             return
@@ -134,7 +139,7 @@ class RadioManager:
         except (TypeError, OSError, ValueError):
             pass
 
-    def _weak_wifi(self) -> bool:
+    def weak_wifi(self) -> bool:
         st = self.stats["WIFI"] if "WIFI" in self.stats else None
         return st is not None and (st.per > 0.02 or st.rtt_ms > 150
                                    or (self.wifi_signal is not None and self.wifi_signal < 40))
@@ -311,7 +316,7 @@ class RadioManager:
         loc = self.location
         if loc is not None:
             flags |= P.F_LOC
-        if channel == "WIFI" and not self._weak_wifi():
+        if channel == "WIFI" and not self.weak_wifi():
             tail = L.encode_full(loc) if loc else b""
             return [P.Packet(P.DATA, self.next_seq(), flags, lang, payload=raw + tail)]
         if channel in ("WIFI", "BLUETOOTH"):              # weak WiFi = low bandwidth -> compress
