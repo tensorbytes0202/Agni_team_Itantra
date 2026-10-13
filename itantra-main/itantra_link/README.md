@@ -24,6 +24,17 @@ No new pip packages needed (standard library only; reuses itantra_ai modules).
 
 Expect 10 x PASS and 9 x PASS.
 
+## Connection UI (Streamlit): scan -> connect -> queue -> send
+
+    streamlit run itantra_link/streamlit_ui.py                     # choose sender/receiver in the sidebar
+    python -m itantra_link.tests.test_queue                        # offline queue + restart + delivery
+
+- **Search networks** forces a fresh WiFi scan (strongest first, 5 GHz wins ties). Open networks connect
+  with one click; secured ones ask for the password once (Windows saves it as a WiFi profile).
+- After joining, discovery finds the peer by itself (or type its IP in the sidebar).
+- No link -> messages stay **queued** (also in `queue_<role>.json`, so they survive a restart) and go out,
+  alerts first, as soon as a link is back. Weak WiFi (signal < 40 %, loss or slow RTT) -> text is sent compressed.
+
 ## Desktop app (everything in one window) — use this for the demo
 
     laptop 1:  python -m itantra_link.app --role sender   --lat 28.669156 --lon 77.453758
@@ -183,4 +194,7 @@ Verified: received English audio fed back into our own STT was recognised correc
 | node.py | Interactive text node for demos (receiver side) |
 | voice_node.py | Mic -> STT -> Radio Manager (push-to-talk + auto pause detection) |
 | speaker.py | Receiver TTS worker: voice choice, alert priority, spoken summaries with distance |
+| wifi_scan.py | Real WiFi scan / connect / current signal (netsh on Windows, nmcli on Linux) |
+| streamlit_ui.py | Streamlit connection UI |
 | tests/test_link.py | Acceptance tests |
+| tests/test_queue.py | Store-and-forward queue survives offline + restart |

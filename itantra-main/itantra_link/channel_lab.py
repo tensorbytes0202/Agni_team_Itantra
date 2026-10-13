@@ -87,7 +87,6 @@ class Discovery:
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.sock.bind(("0.0.0.0", self._listen))
         self.sock.settimeout(0.5)
-        self._addrs = _broadcast_addrs()
 
     @property
     def connected(self) -> bool:
@@ -113,7 +112,7 @@ class Discovery:
         with self._lock:
             msg = json.dumps({"app": "itantra", "id": self.id, "role": self.role, "name": self.name,
                               **self.ports, "env": self.env}).encode()
-        targets = list(self._addrs)
+        targets = _broadcast_addrs()                    # re-read: we may have just joined a network
         if self.manual_ip:
             targets.append(self.manual_ip)
         if self.peer_ip:

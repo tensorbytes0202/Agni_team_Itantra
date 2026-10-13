@@ -16,3 +16,4 @@ itantra_ai/tts/models/
 
 # Personal voice recordings / received audio
 *.wav
+queue_*.json

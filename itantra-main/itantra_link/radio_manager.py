@@ -18,7 +18,8 @@ Link-adaptive format (the unique part):
 """
 import collections
 import itertools
-import queue
+import json
+import os
 import threading
 import time
 import zlib
@@ -82,7 +83,8 @@ class Received:
 
 class RadioManager:
     def __init__(self, transports: List, on_receive: Callable[[Received], None] = print,
-                 log: Callable[[str], None] = print, verbose: bool = False):
+                 log: Callable[[str], None] = print, verbose: bool = False,
+                 queue_file: Optional[str] = None):
         self.verbose = verbose
         self.t: Dict[str, object] = {tr.name: tr for tr in transports}
         self.stats: Dict[str, LinkStats] = {n: LinkStats() for n in self.t}
@@ -95,7 +97,12 @@ class RadioManager:
         self._acks: Dict[int, threading.Event] = {}
         self._probes: Dict[int, float] = {}
         self._seen = collections.deque(maxlen=500)
-        self._outbox = queue.Queue()
+        self._pending: list = []                  # unsent (priority, time, text, lang): store-and-forward
+        self._qlock = threading.Lock()
+        self._wake = threading.Event()
+        self.queue_file = queue_file              # queue survives an app restart
+        self.wifi_signal: Optional[int] = None    # OS WiFi signal %, set by the UI; weak -> compress
+        self._load()
         self._stop = False
         self._lock = threading.Lock()
         self.location: Optional[tuple] = None   # own (lat, lon); set from GPS
@@ -103,6 +110,34 @@ class RadioManager:
     def set_location(self, lat: float, lon: float):
         """Call whenever GPS gives a fix (GPS works offline)."""
         self.location = (lat, lon)
+
+    @property
+    def queued(self) -> int:
+        return len(self._pending)
+
+    def _save(self):
+        if not self.queue_file:
+            return
+        with self._qlock:
+            data = json.dumps(self._pending)
+        try:
+            with open(self.queue_file + ".tmp", "w", encoding="utf-8") as f:
+                f.write(data)
+            os.replace(self.queue_file + ".tmp", self.queue_file)
+        except OSError:
+            pass
+
+    def _load(self):
+        try:
+            with open(self.queue_file, encoding="utf-8") as f:
+                self._pending = [tuple(i) for i in json.load(f)]
+        except (TypeError, OSError, ValueError):
+            pass
+
+    def _weak_wifi(self) -> bool:
+        st = self.stats["WIFI"] if "WIFI" in self.stats else None
+        return st is not None and (st.per > 0.02 or st.rtt_ms > 150
+                                   or (self.wifi_signal is not None and self.wifi_signal < 40))
 
     # ------------------------------------------------------------ lifecycle
     def start(self):
@@ -160,7 +195,7 @@ class RadioManager:
             rtt = "-" if st.rtt_ms == float("inf") else f"{st.rtt_ms:.0f}ms"
             flag = "UP" if self.healthy(n) else "DOWN"
             parts.append(f"{n}:{flag} PER={st.per*100:.0f}% RTT={rtt} CRC-dropped={st.crc_drops}")
-        return f"active={self.current} | " + " | ".join(parts)
+        return f"active={self.current} | queued={self.queued} | " + " | ".join(parts)
 
     # ------------------------------------------------------------ probing
     def _probe_loop(self):
@@ -245,29 +280,28 @@ class RadioManager:
 
     # ------------------------------------------------------------ sending
     def send_message(self, text: str, lang: str = "en"):
-        """Non-blocking. Alerts jump the queue."""
+        """Non-blocking. Alerts jump the queue. Stays queued (and on disk) until a link delivers it."""
         urgency, _ = analyze(text)
-        self._outbox.put((0 if is_alert(urgency) else 1, time.time(), text, lang))
+        with self._qlock:
+            self._pending.append((0 if is_alert(urgency) else 1, time.time(), text, lang))
+        self._save()
+        self._wake.set()
 
     def _send_loop(self):
-        pending = []
         while not self._stop:
-            try:
-                while True:
-                    pending.append(self._outbox.get_nowait())
-            except queue.Empty:
-                pass
-            if not pending:
-                time.sleep(0.05)
+            with self._qlock:
+                self._pending.sort()                      # alerts first, then FIFO
+                item = self._pending[0] if self._pending else None
+            if item is None or (self._best() is None and self.current is None):
+                self._wake.wait(0.5)                      # no message, or no link: wait
+                self._wake.clear()
                 continue
-            pending.sort()                                # alerts first, then FIFO
-            if self._best() is None and self.current is None:
-                time.sleep(0.5)                           # store-and-forward: wait for a link
-                continue
-            item = pending.pop(0)
-            if not self._deliver(item[2], item[3]):
+            if self._deliver(item[2], item[3]):
+                with self._qlock:
+                    self._pending.remove(item)
+                self._save()
+            else:
                 self.log("[radio] no link delivered it, queued for retry")
-                pending.append(item)
                 time.sleep(1.0)
 
     def _build(self, channel: str, text: str, lang: str) -> List[P.Packet]:
@@ -277,10 +311,10 @@ class RadioManager:
         loc = self.location
         if loc is not None:
             flags |= P.F_LOC
-        if channel == "WIFI":
+        if channel == "WIFI" and not self._weak_wifi():
             tail = L.encode_full(loc) if loc else b""
             return [P.Packet(P.DATA, self.next_seq(), flags, lang, payload=raw + tail)]
-        if channel == "BLUETOOTH":
+        if channel in ("WIFI", "BLUETOOTH"):              # weak WiFi = low bandwidth -> compress
             tail = L.encode_full(loc) if loc else b""
             return [P.Packet(P.DATA, self.next_seq(), flags | P.F_COMPRESSED, lang,
                              payload=zlib.compress(raw, 6) + tail)]
