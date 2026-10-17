@@ -1,11 +1,13 @@
 """
 WiFi scan + connect for the offline -> online step (stdlib only).
-Windows: netsh.  Linux: nmcli.
+Windows: netsh.  macOS: networksetup / system_profiler.  Linux: nmcli.
 
     scan()                      -> [{ssid, signal, band, auth, secured}] strongest first (5 GHz wins ties)
     current()                   -> (ssid, signal %) or (None, None)
     connect(ssid, password)     -> (ok, message). Open networks need no password; saved ones neither.
 """
+import functools
+import json
 import os
 import re
 import subprocess
@@ -15,6 +17,8 @@ import time
 from xml.sax.saxutils import escape
 
 WIN = sys.platform.startswith("win")
+MAC = sys.platform == "darwin"
+HIDDEN = "Connected (name hidden by macOS)"   # newer macOS hides the SSID without Location permission
 
 
 def _run(cmd, timeout=15):
@@ -55,9 +59,42 @@ def _win_rescan(settle=4.0):
         pass
 
 
+@functools.lru_cache(maxsize=1)
+def _mac_iface():
+    _, out = _run(["networksetup", "-listallhardwareports"], 5)
+    m = re.search(r"Hardware Port: (?:Wi-Fi|AirPort)\s*\nDevice: (\S+)", out)
+    return m.group(1) if m else "en0"
+
+
+def _mac_scan(nets):
+    _, out = _run(["system_profiler", "SPAirPortDataType", "-json"], 30)
+    try:
+        ifaces = json.loads(out)["SPAirPortDataType"][0]["spairport_airport_interfaces"]
+    except (ValueError, KeyError, IndexError, TypeError):
+        return
+    for ifc in ifaces:
+        cur = ifc.get("spairport_current_network_information")
+        for net in ifc.get("spairport_airport_other_local_wireless_networks", []) + ([cur] if cur else []):
+            name = net.get("_name", "")
+            m = re.match(r"\s*(-?\d+)", str(net.get("spairport_signal_noise", "")))
+            if not name or name.startswith("<") or not m:            # "<redacted>": name hidden by macOS
+                continue
+            sig = max(0, min(100, 2 * (int(m.group(1)) + 100)))      # dBm -> % (-50 dBm = 100 %, -100 = 0 %)
+            ch, sec = str(net.get("spairport_network_channel", "")), str(net.get("spairport_security_mode", ""))
+            auth = "Open" if not sec or sec.endswith("none") else \
+                sec.replace("spairport_security_mode_", "").replace("_", " ").upper()
+            n = nets.setdefault(name, {"ssid": name, "auth": auth, "signal": -1, "band": ""})
+            if sec:                                           # some entries omit the security mode
+                n["auth"] = auth
+            if sig > n["signal"]:
+                n.update(signal=sig, band="6 GHz" if "6GHz" in ch else "5 GHz" if "5GHz" in ch else "2.4 GHz" if ch else "")
+
+
 def scan():
     nets = {}
-    if WIN:
+    if MAC:
+        _mac_scan(nets)
+    elif WIN:
         _win_rescan()
         _, out = _run(["netsh", "wlan", "show", "networks", "mode=bssid"])
         ssid, auth, last = "", "", None
@@ -97,6 +134,18 @@ def current():
         if kv.get("State", "").lower() == "connected" and kv.get("SSID"):
             return kv["SSID"], int(kv.get("Signal", "0%").rstrip("%") or 0)
         return None, None
+    if MAC:                                               # signal % has no fast source on macOS
+        iface = _mac_iface()
+        _, out = _run(["networksetup", "-getairportnetwork", iface], 5)
+        m = re.search(r"Current Wi-Fi Network: (.+)", out)
+        if m:
+            return m.group(1).strip(), None
+        _, out = _run(["ipconfig", "getsummary", iface], 5)
+        m = re.search(r"^\s*SSID : (.+)$", out, re.M)
+        if m and not m.group(1).startswith("<"):
+            return m.group(1).strip(), None
+        rc, ip = _run(["ipconfig", "getifaddr", iface], 5)
+        return (HIDDEN, None) if rc == 0 and ip.strip() else (None, None)
     _, out = _run(["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL", "dev", "wifi"], 5)
     for line in out.splitlines():
         p = line.split(":")
@@ -149,12 +198,16 @@ def connect(ssid, password=None, auth="", wait=12):
             if not ok:
                 return False, msg
         rc, out = _run(["netsh", "wlan", "connect", f"name={ssid}"])
+    elif MAC:                                             # saved networks use the keychain password
+        rc, out = _run(["networksetup", "-setairportnetwork", _mac_iface(), ssid] + ([password] if password else []), 40)
+        if re.search(r"error|could not|failed", out, re.I):
+            rc = rc or 1
     else:
         rc, out = _run(["nmcli", "dev", "wifi", "connect", ssid] + (["password", password] if password else []), 30)
     if rc:
         return False, out.strip()
     for _ in range(wait * 2):
-        if current()[0] == ssid:
+        if current()[0] in (ssid, HIDDEN if MAC else None):
             return True, f"connected to {ssid}"
         time.sleep(0.5)
     return False, "timed out (wrong password or out of range?)"

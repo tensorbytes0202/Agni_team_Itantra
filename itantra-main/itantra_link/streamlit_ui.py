@@ -207,7 +207,9 @@ with left:
         if nets is None:
             st.caption("Scan to list nearby networks, strongest first. Open networks join in one click.")
         elif not nets:
-            st.caption("No networks found. Check that WiFi is turned on.")
+            st.caption("No networks found. Check that WiFi is turned on."
+                       + (" On macOS, also allow Location Services for your terminal app (System Settings → "
+                          "Privacy & Security), or macOS hides network names." if W.MAC else ""))
         else:
             event = st.dataframe(
                 [{"Network": x["ssid"], "Signal": x["signal"], "Band": x["band"],

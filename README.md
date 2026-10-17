@@ -113,7 +113,7 @@ Word error rate across all languages has not been measured yet.
 |---|---|
 | Wi-Fi transmission (UDP), packets, CRC, ACK, failover, queue | **Real** |
 | STT (9 languages) and TTS | **Real**, offline (Piper voices tested; MMS voices not fully verified yet) |
-| Wi-Fi scan / connect, discovery, signal readout | **Real** (Windows `netsh`, Linux `nmcli`) |
+| Wi-Fi scan / connect, discovery, signal readout | **Real** (Windows `netsh`, Linux `nmcli`; macOS `networksetup` / `system_profiler`, not yet tested on a Mac, no live signal % there) |
 | Low-bitrate radio link (600 bps, loss, bit errors, frequencies) | **Emulated** in software, behind the same interface a LoRa module will use |
 | Channel conditions (interference, jamming) | **Emulated** |
 | Bluetooth link | Not built yet |
