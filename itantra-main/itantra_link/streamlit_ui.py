@@ -37,6 +37,7 @@ def plain(text) -> str:
 
 
 REFRESH = 2                                                     # seconds between live updates
+SPEAK_MAX, SPEAK_WINDOW_S = 6, 30                               # at most 6 spoken messages per 30 s
 
 
 @st.cache_resource
@@ -55,10 +56,22 @@ def node(role: str) -> SimpleNamespace:
         n.speaker = None
         log(f"voice playback off ({type(e).__name__}: {e})")
 
+    n.spoken = collections.deque()                       # times of recent spoken messages
+
     def on_receive(m):
-        n.feed.appendleft(("in", time.time(), m))
-        if n.speaker and n.speak:
-            n.speaker.say(m)                             # alerts: siren + full volume, not interruptible
+        now = time.time()
+        n.feed.appendleft(("in", now, m))
+        if not (n.speaker and n.speak):
+            return
+        # Any device on the network can send packets (no pairing yet), so cap speech: a flood
+        # must not queue endless full-volume, non-interruptible sirens. Extra ones are only shown.
+        while n.spoken and now - n.spoken[0] > SPEAK_WINDOW_S:
+            n.spoken.popleft()
+        if len(n.spoken) >= SPEAK_MAX:
+            log("too many messages: shown but not spoken")
+            return
+        n.spoken.append(now)
+        n.speaker.say(m)                                 # alerts: siren + full volume, not interruptible
 
     n.rm = RadioManager([n.wifi, n.lb], log=log, queue_file=f"queue_{role}.json", on_receive=on_receive)
 
