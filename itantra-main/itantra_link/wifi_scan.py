@@ -164,7 +164,7 @@ def _add_profile(ssid, pw, auth):
     if pw:
         a = "WPA3SAE" if "WPA3" in auth and "WPA2" not in auth else "WPA2PSK"
         sec = (f"<authEncryption><authentication>{a}</authentication><encryption>AES</encryption>"
-               f"<useOneX>false</useOneX></authEncryption><sharedKey><keyType>passphrase</keyType>"
+               f"<useOneX>false</useOneX></authEncryption><sharedKey><keyType>passPhrase</keyType>"
                f"<protected>false</protected><keyMaterial>{escape(pw)}</keyMaterial></sharedKey>")
     else:
         sec = ("<authEncryption><authentication>open</authentication><encryption>none</encryption>"
@@ -177,7 +177,6 @@ def _add_profile(ssid, pw, auth):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(xml)
-        _run(["netsh", "wlan", "delete", "profile", f"name={ssid}"], 5)
         rc, out = _run(["netsh", "wlan", "add", "profile", f"filename={path}", "user=current"], 10)
     finally:
         os.remove(path)                                   # file held the password

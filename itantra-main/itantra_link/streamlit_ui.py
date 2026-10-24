@@ -180,7 +180,9 @@ def connect_dialog(net):
     st.markdown(f"**{plain(net['ssid'])}**  ·  {net['signal']}%  ·  {net['band'] or 'band unknown'}  ·  "
                 f"{plain(net['auth'])}")
     with st.form("connect", border=False):
-        pw = st.text_input("Password", type="password", help="Leave empty if this laptop has joined it before")
+        pw = st.text_input("WiFi password", type="password",
+                           help="The password of this network (for a phone hotspot: the hotspot password). "
+                                "Leave empty if this laptop has joined it before.")
         if st.form_submit_button("Connect", type="primary", icon=":material/link:", width="stretch"):
             with st.spinner(f"Connecting to {plain(net['ssid'])}…"):
                 ok, msg = W.connect(net["ssid"], pw or None, net["auth"])
