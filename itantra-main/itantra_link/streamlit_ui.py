@@ -7,10 +7,13 @@ Run from the itantra-main folder, so .streamlit/config.toml (theme, localhost on
     python -m streamlit run itantra_link/streamlit_ui.py --server.port 8502 -- receiver   # receiver
 """
 import collections
+import io
 import os
 import string
 import sys
+import threading
 import time
+import wave
 from types import SimpleNamespace
 
 import streamlit as st
@@ -44,8 +47,20 @@ def node(role: str) -> SimpleNamespace:
     n.wifi = UdpWifiTransport(wp, "127.0.0.1", pwp)
     n.lb = EmulatedLowBitrateTransport(lp, "127.0.0.1", plp)
     log = lambda s: n.logs.appendleft(f"{time.strftime('%H:%M:%S')}  {s.strip()}")
-    n.rm = RadioManager([n.wifi, n.lb], log=log, queue_file=f"queue_{role}.json",
-                        on_receive=lambda m: n.feed.appendleft(("in", time.time(), m)))
+    n.speak = True
+    try:                                                 # offline TTS; absent on a text-only install
+        from itantra_link.speaker import Speaker
+        n.speaker = Speaker(lambda: n.rm.location, log=log)
+    except Exception as e:
+        n.speaker = None
+        log(f"voice playback off ({type(e).__name__}: {e})")
+
+    def on_receive(m):
+        n.feed.appendleft(("in", time.time(), m))
+        if n.speaker and n.speak:
+            n.speaker.say(m)                             # alerts: siren + full volume, not interruptible
+
+    n.rm = RadioManager([n.wifi, n.lb], log=log, queue_file=f"queue_{role}.json", on_receive=on_receive)
 
     def on_peer(ip, info):
         n.wifi.peer, n.lb.peer = (ip, int(info["wifi_port"])), (ip, int(info["lb_port"]))
@@ -60,10 +75,48 @@ def node(role: str) -> SimpleNamespace:
     return n
 
 
+@st.cache_resource
+def stt_holder() -> SimpleNamespace:
+    """At most one STT model in RAM for the whole app; switching language frees the old one."""
+    return SimpleNamespace(speech=None, lock=threading.Lock())
+
+
+def pcm16k(wav_bytes: bytes) -> bytes:
+    """Browser recording (WAV) -> 16 kHz mono int16, what both STT engines expect."""
+    import numpy as np
+    with wave.open(io.BytesIO(wav_bytes)) as wf:
+        ch, width, rate = wf.getnchannels(), wf.getsampwidth(), wf.getframerate()
+        raw = wf.readframes(wf.getnframes())
+    a = np.frombuffer(raw, dtype={1: np.uint8, 2: np.int16, 4: np.int32}[width]).astype(np.float32)
+    a = (a - 128) * 256 if width == 1 else a / 65536 if width == 4 else a
+    a = a.reshape(-1, ch).mean(axis=1)
+    if rate != 16000:
+        a = np.interp(np.arange(0, len(a), rate / 16000), np.arange(len(a)), a)
+    return np.clip(a, -32768, 32767).astype(np.int16).tobytes()
+
+
+def transcribe(wav_bytes: bytes, lang: str):
+    """Offline STT. Returns (text, stt_seconds, audio_seconds)."""
+    from itantra_ai import model_packs as MP
+    from itantra_link.voice_node import Speech
+    if MP.state("stt", lang) == "missing":
+        raise LookupError(f"No {LANGS[lang]} speech model on this laptop yet (see README → Models).")
+    h = stt_holder()
+    with h.lock:
+        MP.ensure("stt", lang)                           # unzip the language pack if needed
+        if h.speech is None:
+            h.speech = Speech(lang)
+        else:
+            h.speech.set_lang(lang)
+        return h.speech.transcribe_pcm(pcm16k(wav_bytes))
+
+
 # ------------------------------------------------------------------ page + state
 st.set_page_config(page_title="iTantra link", page_icon=":material/cell_tower:", layout="wide")
 st.session_state.setdefault("nets", None)
 st.session_state.setdefault("flash", None)
+st.session_state.setdefault("mic_n", 0)                  # bump to clear the recorder after each message
+st.session_state.setdefault("mic_note", None)
 
 with st.sidebar:
     st.title(":material/cell_tower: iTantra link")
@@ -84,6 +137,11 @@ with st.sidebar:
     n.lb.enabled = st.toggle("Low-bitrate radio", value=True,
                              help="Emulated 600 bps LoRa-class link with loss and bit errors")
 
+    st.subheader(":material/record_voice_over: Voice")
+    n.speak = st.toggle("Speak received messages", value=n.speak, disabled=n.speaker is None,
+                        help="Offline text-to-speech on this laptop. Alerts play a siren at full volume."
+                        if n.speaker else "Needs the full install: pip install -r requirements.txt")
+
     st.subheader(":material/lan: Peer")
     with st.form("peer", border=False):
         ip = st.text_input("Peer IP", placeholder="192.168.1.23",
@@ -93,7 +151,7 @@ with st.sidebar:
             st.toast(f"Looking for the {CH.OTHER[role]} at {plain(ip.strip())}", icon=":material/search:")
 
 if st.session_state.flash:
-    st.toast(st.session_state.flash, icon=":material/wifi:")
+    st.toast(st.session_state.flash[0], icon=st.session_state.flash[1])
     st.session_state.flash = None
 
 
@@ -187,7 +245,7 @@ def connect_dialog(net):
             with st.spinner(f"Connecting to {plain(net['ssid'])}…"):
                 ok, msg = W.connect(net["ssid"], pw or None, net["auth"])
             if ok:
-                st.session_state.flash = plain(msg.capitalize())
+                st.session_state.flash = (plain(msg.capitalize()), ":material/wifi:")
                 st.rerun()
             st.error(plain(msg), icon=":material/error:")
 
@@ -254,3 +312,27 @@ with right:
             n.rm.send_message(text.strip(), lang)
             n.feed.appendleft(("out", time.time(), (text.strip(), lang)))
             st.rerun()
+
+        audio = st.audio_input(f":material/mic: Speak in {LANGS[lang]}", sample_rate=16000,
+                               key=f"mic_{st.session_state.mic_n}",
+                               help="Record, stop, and it is turned into text offline and sent. "
+                                    "Pick the language at the top of this card first.")
+        if audio is not None:
+            with st.spinner("Converting speech to text offline…"):
+                try:
+                    heard, stt_s, audio_s = transcribe(audio.getvalue(), lang)
+                except Exception as e:
+                    st.session_state.mic_note = ("error", f"{type(e).__name__}: {e}")
+                else:
+                    if heard:
+                        n.rm.send_message(heard, lang)
+                        n.feed.appendleft(("out", time.time(), (heard, lang)))
+                        st.session_state.mic_note = ("ok", f"Heard in {stt_s * 1000:.0f} ms "
+                                                           f"(RTF {stt_s / max(audio_s, 1e-6):.2f}) and sent.")
+                    else:
+                        st.session_state.mic_note = ("warn", "Didn't catch any words. Try again, a bit closer.")
+            st.session_state.mic_n += 1                  # new key = empty recorder for the next message
+            st.rerun()
+        if st.session_state.mic_note:
+            kind, note = st.session_state.mic_note
+            {"ok": st.caption, "warn": st.warning, "error": st.error}[kind](plain(note))
